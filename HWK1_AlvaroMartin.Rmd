@@ -1,0 +1,1296 @@
+---
+title: 'Best Countries in the world'
+author: ": Alvaro Martin-group 196: 100475318"
+output:
+  html_document:
+    df_print: paged
+---
+# Load the data
+Clean the environment an load thr datasets that we are going to use.
+```{r}
+rm(list=ls())
+# Who dataset: A set of social, economic, health, and political indicators
+who = read.csv('WHO.csv')
+# Economic freedom index dataset: A dataset with plenty of economic indicators. 
+economic_freedom = read.csv('index2022_data.csv')
+
+```
+
+***Libraries***
+```{r}
+if (!require("mice")){
+  install.packages("mice")
+}
+library(mice)
+
+if (!require("kernlab")){
+  install.packages('kernlab')
+}
+library(kernlab)
+
+if (!require("countrycode")){
+  install.packages('countrycode')
+}
+library(countrycode)
+
+if (!require("rworldmap")){
+  install.packages('rworldmap')
+}
+library(rworldmap)
+
+if (!require("factoextra")){
+  install.packages('factoextra')
+}
+library(factoextra)
+
+if (!require("igraph")){
+  install.packages('igraph')
+}
+library(igraph)
+
+if (!require("factoextra")){
+  install.packages('factoextra')
+}
+library(factoextra)
+
+if (!require("cluster")){
+  install.packages('cluster')
+}
+library(cluster)
+
+if (!require("mclust")){
+  install.packages('mclust')
+}
+library(mclust)
+
+if (!require("GGally")){
+  install.packages('GGally')
+}
+library(GGally) 
+
+if (!require("tidyverse")){
+  install.packages('tidyverse')
+}
+library(tidyverse)
+
+if (!require("VIM")){
+  install.packages('VIM')
+}
+library(VIM) 
+
+if (!require("Quandl")){
+  install.packages('Quandl')
+}
+library(Quandl) 
+
+if (!require("lubridate")){
+  install.packages('lubridate')
+}
+library(lubridate) 
+
+if (!require("quantmod")){
+  install.packages('quantmod')
+}
+library(quantmod) 
+
+if (!require("ggpubr")){
+  install.packages('ggpubr')
+}
+library("ggpubr")
+
+if (!require("outliers")){
+  install.packages('outliers')
+}
+library(outliers)
+
+if (!require("ggplot2")){
+  install.packages("ggplot2")
+}
+library(ggplot2)
+if (!require("Amelia")){
+  install.packages("Amelia")
+}
+library("Amelia")
+
+```
+
+
+Let's have a look at the datasets
+```{r}
+head(who)
+head(economic_freedom)
+summary(who)
+summary(economic_freedom)
+str(economic_freedom)
+str(who)
+```
+Economic freedom dataset has some interesnting indicators apart from the
+classical ones of GDP, GNI...
+In general, we can use some "social" and health variables of the who
+dataset to meassure the quality of life and social freedom, and the 
+other dataset to meassure the Economic freedom of each country.
+Therefore, if we merge both datasets we can see which are the
+freer countries in all aspects (and if they are also the ones 
+with a better quality of life).
+
+## Merge the datasets
+To merge the datasets, we need a common variable. In our case it is 
+the name of the country. But as I get the datasets from different sources, we need to check if the country names are written in the same way
+```{r}
+# Are the countries written in the same way?
+for(j in 1:nrow(economic_freedom)){
+  if(!any(economic_freedom[j,27] == who[,1])){
+    cat("The row", j, "is written different or does not appear in the WHO dataset:", economic_freedom[j,27], "\n")
+  }
+}
+
+# We can see that there are about 20 countries that appear in both
+# datasets but with different names. For example, we have "United States"
+#  on the economic_freedom dataset, and "United States of America" 
+# on the other.
+# Let's change the names so they appear in the same way in both data sets.
+who$Country[which(who$Country == 'Cape Verde')] = 'Cabo Verde'
+economic_freedom$Country[which(economic_freedom$Country == "Congo, Democratic Republic of the Congo")]=
+  "Congo, Dem. Rep."
+economic_freedom$Country[which(economic_freedom$Country == "Congo, Republic of")]=
+  "Congo, Rep."
+economic_freedom$Country[which(economic_freedom$Country == "CÃ´te d'Ivoire")]=
+  "Cote d'Ivoire"
+who$Country[which(who$Country == "Iran (Islamic Republic of)")]=
+  "Iran"
+who$Country[which(who$Country == 'Korea, Dem. Rep.')] = "Korea, North "
+who$Country[which(who$Country == 'Korea, Rep.')] = 'Korea, South'
+economic_freedom$Country[which(economic_freedom$Country == "Kyrgyz Republic")]=
+  "Kyrgyzstan"
+who$Country[which(who$Country == "Lao People's Democratic Republic")] = "Lao P.D.R."
+who$Country[which(who$Country == "Libyan Arab Jamahiriya")] = 'Libya'
+economic_freedom$Country[which(economic_freedom$Country == "North Macedonia")]=
+  "Macedonia"
+who$Country[which(who$Country == "Micronesia (Federated States of)")] = 'Micronesia'
+economic_freedom$Country[which(economic_freedom$Country == "SÃ£o TomÃ© and PrÃ­ncipe")]=
+  "Sao Tome and Principe"
+economic_freedom$Country[which(economic_freedom$Country == "Slovak Republic")]=
+  "Slovakia"
+economic_freedom$Country[which(economic_freedom$Country == "Taiwan ")]=
+  "Taiwan"
+who$Country[which(who$Country == "United States of America")] = 'United States'
+
+economic_freedom$Country[which(economic_freedom$Country == "Burma")]=
+  "Myanmar"
+who$Country[which(who$Country == "Swaziland")] = 'Eswatini'
+
+
+# If we check again the countries in common, we now see that all the countries that appear on the economic_freedom dataset are also in the other one, except from just Kosovo and Liechtenstein.
+for(j in 1:nrow(economic_freedom)){
+  if(!any(economic_freedom[j,27] == who[,1])){
+    cat("The row", j, "is not in both dataset:", economic_freedom[j,27], "\n")
+  }
+}
+
+# There is also something strange with the lines from 185 to 188 of 
+# the economic dataset. It seems that they don't have any value
+# on the variable Country (the name of the country). Let's have a look.
+for(i in 1:nrow(economic_freedom)){
+  if(is.na(economic_freedom[i,1])){
+    cat("Row ",i," has NA values\n")
+  }
+}
+
+
+md.pattern(economic_freedom)
+# After doing this, we know that the last 4 rows of the dataset are empty. 
+# We can remove them, but as we are going to do a merge now, we are going
+# get rid of them anyway.
+
+# Now, we can finally do the merge.
+# We have lost some countries of the who dataset, since not all the 
+# countries that appear there were also in the economic_freedom dataset,
+# which is normal. 
+
+total.data= merge(x = who, y = economic_freedom, by = 'Country')
+
+```
+Let's select some relevant variables. Later we will see which are the more important ones.
+```{r}
+
+data = 
+  total.data %>% select(Country,Total.fertility.rate..per.woman.,
+                  Gross.national.income.per.capita..PPP.international...,
+                  Population.living.below.the.poverty.line....living.on..lt..US.1.per.day.,
+                  Adult.mortality.rate..probability.of.dying.between.15.to.60.years.per.1000.population..both.sexes,
+                  Infant.mortality.rate..per.1.000.live.births..both.sexes,
+                  Life.expectancy.at.birth..years..both.sexes, 
+                  Under.5.mortality.rate..probability.of.dying.by.age.5.per.1000.live.births..both.sexes,
+                  CO2_emissions, Cell_phones_per_100_people,
+                  Income_per_person, Inflation...., Business.Freedom,
+                  Internet_users, Democracy_score, 
+                  Judical.Effectiveness, X2022.Score, Property.Rights,
+                        Unemployment...., GDP.per.Capita..PPP.)
+
+```
+
+**New variable**
+I also think that it would be interesting to have a variable that
+was representative of the 'equality' in the country. Since there is not
+variable that measures exactly that, I think a good approximation
+is to check of the percentage of women and men enrolled in primary
+school is similar. Countries that are more advanced in equality tend
+to have an enrollment ratio in primary school similar in both sexes. Hence, I am going to create a new variable called 'education_equality' that shows this information:
+```{r}
+data$Education_equality = total.data$Net.primary.school.enrolment.ratio.female..../total.data$Net.primary.school.enrolment.ratio.male....
+```
+
+# Finding NA's
+```{r}
+# FIND the NAs
+# How many NAs we have?
+sum(is.na(data))
+
+# With the function summary we can see more in detail in which variable 
+# the NAs are.
+summary(data)
+
+# There are also some NAs that appear as characters ("n/a").
+# So let's change them by NA, so we can deal with all of them easier.
+data[data == "n/a" |data == "N/A" ] <- NA
+# Check that we have replace all of them:
+which(data=="n/a" | data== "N/A")
+```
+
+
+**Casting variables**
+```{r}
+data$X2022.Score= as.numeric(data$X2022.Score)
+data$Property.Rights= as.numeric(data$Property.Rights)
+data$Judical.Effectiveness= as.numeric(data$Judical.Effectiveness)
+data$Inflation....=as.numeric(data$Inflation....)
+data$Unemployment....= as.numeric(data$Unemployment....)
+data$Business.Freedom = as.numeric(data$Business.Freedom)
+```
+
+How can we cast the numbers that can with a dollar?
+```{r}
+# The variable of the GDP has the problem that comes with the dollar sign ($),so we need to remove it before we cast it to numeric
+for(i in 1:nrow(data)){
+  data$GDP.per.Capita..PPP.[i] = 
+    substr(data$GDP.per.Capita..PPP.[i], 2,nchar(data$GDP.per.Capita..PPP.[i]))
+}
+
+data$GDP.per.Capita..PPP. =as.numeric(gsub(",", "", data$GDP.per.Capita..PPP.))
+# Gsub is for R to know that the decimal value is the comma.
+```
+
+Let's change the name of the variables so they are shorter:
+```{r}
+# Change the name of the variables so they are shorter
+colnames(data) <- c('Country', 'Fertility', 'GNI_Capita_PPP', 'Poverty','Adult_Mortality', 'Infant_Mortality',
+                    'Life_Expentancy', 'Under5_mortality', 'CO2', 'Cell_phones',
+                    'Income_per_person', 'Inflation', 'Business_Freedom', 
+                    "Internet_users","Democracy","Judical_Effectiveness","Economic_freedom",
+                    "Property_Rights", "Unemployment", 'GDP_capita_PPP', 'Education_Equality')
+
+```
+
+# NA's and outliers
+```{r}
+# How many NAs we have?
+sum(is.na(data))
+length(which(is.na(data))) # Another option
+
+# Now we are going to see more in detail how the missing values are 
+# distributed in our data set:
+# How many rows contain missing values?
+length(which(!complete.cases(data)))
+
+summary(aggr(data))
+# The plot on the right part give us the following information (that it is also showed in detail on the console):
+# The  blue row (on the bottom) shows that there are some rows that contain no NA (the 39% of our rows indeed)
+# The second row from the bottom also shows us that there are also some rows with no NA except in the variable Poverty (that we have already removed), which represents the 38 % of our data.
+# Another significant thing that we can conclude from the top row of the graph is that there is a row were many variables have a missing value.
+
+
+# We see that the variable poverty has NA in more than half of the rows, so we are going to remove that variable.
+data$Poverty=NULL
+```
+Another way to visualize the NAs
+```{r}
+missmap(data, main = "Missing Values", col = c("pink", "snow2"))
+```
+Remove rows with many NAs
+```{r}
+# To know the number of NA per row or column:
+colSums(is.na(data))
+rowSums(is.na(data))
+#Let's remove every row with more than 6 missing values. 
+vec <-rowSums(is.na(data))
+data <- data[-which(vec>6), ]
+
+
+# If we have a look at our data again, it looks as follows:
+summary(aggr(data))
+
+```
+
+## Replacement of missing values
+```{r}
+# To do this we are going to use Multiple Imputation:
+set.seed(123)
+md.pattern(data)
+vec1 <- c()
+# Which are the variables with missing values?
+for(i in 1:ncol(data)){
+  if(any(is.na(data[,i]))){
+    vec1 <- c(vec1,i)
+  }
+}
+
+# We use Random Forest imputations
+imp=mice(data[,vec1], method = 'rf')
+```
+
+Logged events
+```{r}
+# A warning is shown, we have 25 logged events
+head(imp$loggedEvents, 3)
+tail(imp$loggedEvents, 3)
+imp$loggedEvents  
+
+# What we see is that it is computing the missing values of GNI_Capita
+# with the variable Income, and vice versa.
+
+# What we can assume by analyzing this is that this two variables are
+# highly correlated. Let's check it:
+pairs(data$GNI_Capita_PPP ~ data$Income_per_person)
+
+# They are highly correlated.
+# After doing some reseacrh this is because the variable GNI_capita_PPP represents the gross national income per capita adjusted to the purchasing power parity, and the variable income is the gross national income but not adjusted to the purchasing power parity. Now that we have notice this, we can remove the variable Income of our dataset (GNI per capita PPP is better to do comparitions between countries than GNI per capita).
+data = data[, -10]
+
+# Now, we do the multiple imputation again:
+vec1 <- c()
+for(i in 1:ncol(data)){
+  if(any(is.na(data[,i]))){
+    vec1 <- c(vec1,i)
+  }
+}
+
+imp=mice(data[,vec1], method = 'rf')
+
+data_imp=mice::complete(imp)
+data$GNI_Capita_PPP = data_imp$GNI_Capita_PPP
+data$CO2 =data_imp$CO2
+data$Cell_phones = data_imp$Cell_phones
+data$Inflation = data_imp$Inflation
+data$Business_Freedom = data_imp$Business_Freedom
+data$Internet_users = data_imp$Internet_users
+data$Democracy = data_imp$Democracy
+data$Judical_Effectiveness = data_imp$Judical_Effectiveness
+data$Economic_freedom = data_imp$Economic_freedom
+data$Property_Rights = data_imp$Property_Rights
+data$Unemployment = data_imp$Unemployment
+data$GDP_capita_PPP = data_imp$GDP_capita_PPP
+data$Education_Equality = data_imp$Education_Equality
+
+# Now, we don't have any missing value:
+any(is.na(data)==TRUE)
+```
+
+Let's add this categorical variable which later may be interesting for the graphs
+```{r}
+data$Region = total.data$Region[-which(vec>6)]
+data$Region= as.factor(data$Region)
+```
+
+## Detection of outliers
+With graphs:
+```{r}
+# I am specially interested in the variable that measures the economic freedom of a country, so let's see if it has many outliers and we need to reduce noise. 
+ggplot(data = data)+aes(x=Unemployment, y = Economic_freedom, color =Region)+geom_point()
+ggplot(data = data)+aes(x=Region, y = Economic_freedom, fill =Region)+geom_boxplot()
+ggplot(data) +
+  aes(x = Economic_freedom) +
+  geom_histogram(bins = 30L, fill = "red") +
+  theme_minimal()
+# With this 3 graphs we see clearly that, at least we are going to have one outlier (the value far away from the rest in the histogram)
+```
+
+
+The easiest way to identify the outliers with a graph is doing a boxplot
+```{r}
+boxplot(data$Economic_freedom,ylab = "Economic Freedom")
+# We have 3 outliers, but there is one that it is specially extreme, which is North Korea:
+min(data$Economic_freedom)
+data$Country[which(data$Economic_freedom ==min(data$Economic_freedom))]
+```
+
+Another ways to identify the outliers:
+```{r}
+# 1) With function outlier
+idx = outlier(data$Economic_freedom, logical=T)
+data$Country[idx]
+
+# 2) 3 sigma method
+mu <- mean(data$Economic_freedom)
+sigma <- sd(data$Economic_freedom)
+
+sum(data$Economic_freedom < mu - 3*sigma | data$Economic_freedom > mu + 3*sigma)
+data$Country[which(data$Economic_freedom < mu - 3*sigma | data$Economic_freedom > mu + 3*sigma)]
+
+# 3)Identification by IQR:
+QI <- quantile(data$Economic_freedom, 0.25, na.rm = TRUE)
+QS <- quantile(data$Economic_freedom, 0.75, na.rm = TRUE)
+IQR = QS-QI
+
+sum(data$Economic_freedom < QI - 1.5*IQR | data$Economic_freedom > QS + 1.5*IQR)
+data$Country[which(data$Economic_freedom < QI - 1.5*IQR | data$Economic_freedom > QS + 1.5*IQR)]
+```
+
+
+There may be allso outliers with respect to other variables, for instance, if we try to explain the GNI by economic freedom and unemployment rate:
+```{r}
+# Let’s explain the GNI by economic freedom and unemployment rate:
+lm.fit = lm(Economic_freedom ~GNI_Capita_PPP, data)
+resid = residuals(lm.fit)
+qplot(data$GNI_Capita_PPP, resid)
+summary(lm(Economic_freedom ~ Country + GNI_Capita_PPP, data))
+resid %>% as.data.frame() %>% ggplot(aes(x=resid)) + geom_boxplot(fill="lightblue")
+# The majority of the residuals are between (-20, 20), which is fine. However, there are a few values outside that interval (outliers). To reduce noise we can remove that values or discretize the variable.
+
+```
+Another outliers against other variables are:
+```{r}
+idx = outlier(resid, logical=T)
+data$Country[which(idx==TRUE)]  # Again, North Korea.
+which(resid < -20 | resid >20)  # We have 6 countries with outlier residuals.
+
+# We can see that there are 3-6 countries that are outliers for any 
+# combination of economic_freedom with any other variable:
+lm.fit1 = lm(Economic_freedom ~Unemployment, data)
+resid1 = residuals(lm.fit1)
+qplot(data$Unemployment, resid1)
+summary(lm(Economic_freedom ~ Country + Unemployment, data))
+resid1 %>% as.data.frame() %>% ggplot(aes(x=resid1)) + geom_boxplot(fill="lightblue")
+which(resid1 < -30 | resid1 >30)
+
+
+lm.fit2 = lm(Economic_freedom ~ Life_Expentancy, data)
+resid2 = residuals(lm.fit2)
+qplot(data$Life_Expentancy, resid2)
+summary(lm(Economic_freedom ~ Country + Life_Expentancy, data))
+resid2 %>% as.data.frame() %>% ggplot(aes(x=resid2)) + geom_boxplot(fill="lightblue")
+which(resid2 < -19 | resid2 >19)
+```
+
+
+We have seen many ways to identify the outliers in this variable. 
+In general, the outliers that we get with the different methods are the same.
+We could remove the extreme values to reduce noise, but as I don't want to remove more rows of our dataset, I believe that the best decision is to discretize the variable to reduce noise.
+
+**Discretize the variable**
+```{r}
+# I will discretize them in the same the way that the website
+# where I got the data from does it: https://www.heritage.org/index/ranking
+
+# 5 levels:
+data$Economic_freedom[data$Economic_freedom >= 80] <- 'Free'
+data$Economic_freedom[data$Economic_freedom <= 79.9 & 
+                        data$Economic_freedom >= 70] <- 'Mostly Free'
+data$Economic_freedom[data$Economic_freedom <= 69.9 & 
+                        data$Economic_freedom >= 60] <- 'Moderately Free'
+data$Economic_freedom[data$Economic_freedom <= 59.9 & 
+                        data$Economic_freedom >= 50] <- 'Mostly Unfree'
+data$Economic_freedom[data$Economic_freedom <= 49.9] <- 'Repressed'
+
+# The counts are:
+table(data$Economic_freedom)
+prop.table(table(data$Economic_freedom))
+
+# Let's reorder the levels:
+data$Economic_freedom = factor(data$Economic_freedom, levels = 
+                                 c('Free', 'Mostly Free', 'Moderately Free',
+                                   'Mostly Unfree', 'Repressed'))
+```
+
+
+# Visualization: interesting graphs
+```{r}
+# Let's make some graphs to understand better the relations between variables:
+
+# GNI per capita vs Life Expectancy grouping countries by economic freedom level:
+ggplot(data, aes(y=GNI_Capita_PPP, x=Life_Expentancy,
+                                      group=Economic_freedom, color=Unemployment))+
+  scale_x_sqrt(breaks=c(0.05,0.1), label=c("5%","10%"))+
+  geom_point(alpha=0.5) +
+  geom_smooth(method=lm,se=F, formula = y~x) +
+  facet_wrap(~ Economic_freedom) +
+  scale_color_gradient(low="green", high="red") +
+  theme_gray() +
+  labs(title = "GNI per capita PPP vs Life Expentancy",
+        caption="Alvaro Martin",
+       x = "", y = "")
+
+# More developed countries (that we have seen that are the more free) emit more CO2 emissions:
+ggplot(data)+aes(y=CO2, fill = Economic_freedom)+geom_boxplot()+
+  facet_wrap(~Economic_freedom)+ theme(legend.position = 'none')
+# Los paises mas desarrollados son responsables de la mayor mparte de las emisiones
+
+# In poor ccuntries, women have more kids:
+ggplot(data)+aes(x=GDP_capita_PPP, y = Fertility)+geom_point()+geom_smooth()
+
+
+# The number of cell phones and internet users is related.
+ggplot(data)+aes(x = Internet_users, y = Cell_phones)+geom_quantile()+geom_point()
+# Let's check it by calculating the correlation
+cor(data$Cell_phones, data$Internet_users, method = c("pearson", "kendall", "spearman"))
+
+
+# Another couple of variables that are related:
+ggscatter(data, x = "Adult_Mortality", y = "Infant_Mortality", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Adult_Mortality", ylab = "Infant_Mortality")
+
+# Democracy by region
+ggplot(data)+aes(y=Democracy, fill = Region)+geom_bar()+facet_wrap(~Region)
+# Europe and America are the continents with more advanced democracies
+
+
+# How many countries we have from each region?
+ggplot(data, aes(x="", y="", fill=Region)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0)
+
+# What is the mean education equality rate for each group of countries in terms of economic freedom
+value <- c(mean(data$Education_Equality[which(data$Economic_freedom=='Free')]),
+           mean(data$Education_Equality[which(data$Economic_freedom=='Mostly Free')]),
+           mean(data$Education_Equality[which(data$Economic_freedom=='Moderately Free')]),
+           mean(data$Education_Equality[which(data$Economic_freedom=='Mostly Unfree')]),
+           mean(data$Education_Equality[which(data$Economic_freedom=='Repressed')]))
+group <- c("Free", "Mostly-Free", "Moderately-Free", "Mostly-Unfree", "Repressed")
+df <- data.frame(group,value)
+ggplot(df, aes(group, value)) + geom_linerange(aes(x = group, ymin = 0.8, ymax = value), 
+    color = "lightgray", size = 1.5)+ geom_point(aes(color = group), size = 3)+
+  ggpubr::color_palette("jco")+theme_pubclean()+ theme(legend.position = 'none')
+# Freer countries are more egalitarians.
+
+# Business freedom by region
+ggplot(data,(aes(x=Region, y = Business_Freedom, fill = Region)))+geom_violin(scale = "area")+
+   geom_dotplot(binaxis='y', stackdir='center', dotsize=0.5)
+
+# Infant moratlity is extremely high in sub-saharian countries:
+ggplot(data, aes(x=reorder(Region, Under5_mortality), y = Under5_mortality, fill = Region))+geom_boxplot()
+
+
+# property rights vs judical effectiveness by region:
+ggplot(data, aes(x=Judical_Effectiveness, y=Property_Rights) ) +
+  stat_density_2d(aes(fill = ..level..), geom = "polygon")+
+  theme(legend.position = 'none')+facet_wrap(~Region)
+# property rights and judical effectiveness are related:
+# In this density chart, a lighter blue indicates higher density
+# With the density chart we can see both the correlation between variables and where there is a bigger concentration of values. For instance, we can see in Europe most of the values are in the top right part of the charge (high Judical Effectiveness and Property Rights)
+
+```
+
+
+```{r}
+# PCA: 
+# To use PCA, we need that all the variables are numeric, so:
+Economic_Freedom <- data_imp$Economic_freedom
+data_num = cbind(data[,2:14], data[,16:19], Economic_Freedom)
+
+# From dimension 15 to dimension 2
+boxplot(data_num, las=2, col="darkblue")
+
+# scale or not to scale?
+boxplot(scale(data_num), las=2, col="darkblue")
+# En nuestro caso yo creo q está claro que necesitamos SCALE 
+
+
+
+# With the following command we can see the correlation between all the variables
+ggcorr(data_num, label = T)  
+# We can check some that some relations between varibales that we 
+# previously study through graphs were correct. 
+# (Adult moratlity and Infant Moratlity, Property Rights and Jusical Effectivenes, etc.)
+
+
+# Now, with PCA we are going to reduce from dimension 20 to dim 2:
+pca = prcomp(data_num, scale=T)   # Notice that we have scaled the data
+# pca = princomp(nba, cor=T) # the same, but using SVD instead of eigen decomposition 
+summary(pca)
+
+# ANother way to see the correlation matrix:
+R = cor(data_num)   # correlation matrix
+eigen(R) 
+
+
+# How many components?
+fviz_screeplot(pca, addlabels = TRUE)
+# With one component we can explain 55% of the variance of our data, with
+# 2 more than 60% and with 3  components almost 75%.
+
+# First component:
+barplot(pca$rotation[,1], las=2, col="darkblue")
+
+
+# Re-escribir esto q es un copia pega:
+# Squared loadings are easier to interpret than the loadings
+# I.e. they are like percentages (numbers between 0 and 1)
+# So let's plot squared loadings instead
+# They are called contribution of variables to components
+# So let's plot squared loadings instead
+# They are called contribution of variables to component
+fviz_contrib(pca, choice = "var", axes = 1)
+
+# Re-escribir:
+# The red dashed line on the graph above indicates the expected average contribution 
+
+# Now we can rank the countries by their first PC scores: 
+names = data[,1]
+
+# The best
+names[order(pca$x[,1])][(length(names)-10):length(names)]
+
+# Another way (doesn't give us the exact same result, but it is very similar) 
+# to see the best 10 countries according to the first principal component:
+calculateScore = function(data) {
+  return(sum((pca$rotation[, 1]*data)^2))
+}
+data$Country[sort.int(apply(data_num, 1, calculateScore), decreasing = T, index.return = T)$ix[1:10]]
+
+# The worst
+names[order(pca$x[,1])][1:10]
+
+
+
+# Now, let's compute the second component
+barplot(pca$rotation[,2], las=2, col="lawngreen")
+
+# Contribution of variables to second component
+fviz_contrib(pca, choice = "var", axes = 2)
+
+# Now we can rank the countries by their second PC scores: 
+names[order(pca$x[,2])][1:10] # Countries with high infant mortality
+names[order(pca$x[,2])][(length(names)-10):length(names)] 
+
+```
+
+# PCA
+
+Firs look:
+```{r}
+# To use PCA, we need that all the variables are numeric, so:
+Economic_Freedom <- data_imp$Economic_freedom
+data_num = cbind(data[,2:14], data[,16:19], Economic_Freedom)
+
+# We need to sacale:
+boxplot(data_num, las=2, col="darkblue")
+boxplot(scale(data_num), las=2, col="darkblue")
+
+
+# With the following command we can see the correlation between all the variables
+ggcorr(data_num, label = T)  
+# We can check some that some relations between variables that we 
+# previously study through graphs were correct. 
+# (Adult moratlity and Infant Moratlity, Property Rights and Jusical Effectivenes, etc.)
+
+
+# Another way to see the correlation matrix:
+R = cor(data_num)   # correlation matrix
+eigen(R) 
+
+
+```
+
+Creation of the principal components:
+```{r}
+# Now, with PCA we are going to reduce from dimension 20 to dim 2:
+pca = prcomp(data_num, scale=T)   
+# Notice that we have scaled the data
+summary(pca)
+```
+
+
+How many components?
+```{r}
+fviz_screeplot(pca, addlabels = TRUE)
+# With one component we can explain 55% of the variance of our data. 
+# With 2, more than 60%.
+
+# First component:
+# What we see is the contribution of variables to components.
+barplot(pca$rotation[,1], las=2, col="darkblue")
+# We can also do the square loadings plot, which is easier to understand.
+# So let's plot squared loadings instead
+# They are called contribution of variables to component
+fviz_contrib(pca, choice = "var", axes = 1)
+# The first component gives more importance to the variables Life Expectancy, Cell phones, Business Freedom... to classify the countries.
+# With this, we can guess that it is going to classify the countries for their quality of life level.
+
+# Now we can rank the countries by their first PC scores: 
+names = data[,1]
+
+# The best
+names[order(pca$x[,1])][(length(names)-10):length(names)]
+
+# The worst
+names[order(pca$x[,1])][1:10]
+
+```
+
+Now, the second component:
+```{r}
+# Now, let's compute the second component:
+barplot(pca$rotation[,2], las=2, col="lawngreen")
+
+# Contribution of variables to second component
+fviz_contrib(pca, choice = "var", axes = 2)
+# In this case, business freedom and cell phones, which were very important for the first component, are among the ones with less importance for the second comopnent.
+
+# Now we can rank the countries by their second PC scores: 
+names[order(pca$x[,2])][1:10] # Countries with high infant mortality
+names[order(pca$x[,2])][(length(names)-10):length(names)] 
+```
+
+
+```{r}
+# Once we have interpreted the meaning of the first two components, let's see the contribution of each country to components
+head(get_pca_ind(pca)$contrib[,1]) # this is in %
+head((pca$x[,1]^2)/(pca$sdev[1]^2))/dim(data_num)[1] # between 0 and 1
+
+# Countries contributions to first component:
+# The top 50 contributions
+fviz_contrib(pca, choice = "ind", axes = 1, top=50)
+# All contributions
+fviz_contrib(pca, choice = "ind", axes = 1)
+
+#  The top 10 countries that contribute to the first component
+names[order(get_pca_ind(pca)$contrib[,1],decreasing=T)][1:10]
+
+# Finally, let's make a zoom to see the top-30 countries in contributions.
+# Also, let's plot it in a graph to see it clearer
+names_z1 = names[order(get_pca_ind(pca)$contrib[,1],decreasing=T)]
+fviz_contrib(pca, choice = "ind", axes = 1, top=30)+
+  scale_x_discrete(labels=names_z1)
+
+```
+**Biplot**
+```{r}
+# observations and variables in same graph (using first 2 components as axes)
+biplot(pca)
+# variables around the center of the graph doesn't contribute much
+# to any of the to PC, whereas variables in the corners are the most significant to both principal components
+
+# Let's remove countries from the graph so we can see clearer the contribution of each variable
+fviz_pca_var(pca, col.var = "contrib")
+# Another different look:
+fviz_pca_biplot(pca, repel = TRUE)
+```
+
+Scores:
+```{r}
+data.frame(z1=-pca$x[,1],z2=pca$x[,2]) %>% 
+  ggplot(aes(z1,z2,label=names)) + geom_point(size=0) +
+  labs(title="PCA", x="PC1", y="PC2") +
+  theme_bw() + scale_color_gradient(low="grey", high="black")+
+  theme(legend.position="bottom") + geom_text(size=2, hjust=0.6, vjust=0, check_overlap = TRUE)
+# The first two PCs  are always uncorrelated.
+# We can change the color to see the relation for different variables:
+data.frame(z1=-pca$x[,1],z2=pca$x[,2]) %>% 
+  ggplot(aes(z1,z2,label=names,color=data_num$Life_Expentancy)) + geom_point(size=0) +
+  labs(title="PCA", x="PC1", y="PC2") +
+  theme_bw() + scale_color_gradient(low="lightblue", high="darkblue")+
+  theme(legend.position="bottom") + geom_text(size=2, hjust=0.6, vjust=0, check_overlap = TRUE) 
+# We can see that, the first component is highly correlated with Life Expentacy.
+
+# PC1 is also kind of related with GNI per capita PPP:
+data.frame(z1=-pca$x[,1],z2=pca$x[,2]) %>% 
+  ggplot(aes(z1,z2,label=names,color=data_num$GNI_Capita_PPP)) + geom_point(size=0) +
+  labs(title="PCA", x="PC1", y="PC2") +
+  theme_bw() + scale_color_gradient(low="lightblue", high="darkblue")+
+  theme(legend.position="bottom") + geom_text(size=2, hjust=0.6, vjust=0, check_overlap = TRUE) 
+
+# Relation between PC1 and number of cell phones:
+data.frame(z1=-pca$x[,1],z2=pca$x[,2]) %>% 
+  ggplot(aes(z1,z2,label=names,color=data_num$Cell_phones)) + geom_point(size=0) +
+  labs(title="PCA", x="PC1", y="PC2") +
+  theme_bw() + scale_color_gradient(low="grey", high="black")+
+  theme(legend.position="bottom") + geom_text(size=2, hjust=0.6, vjust=0, check_overlap = TRUE) 
+
+
+# Which are the regions with the better countries to live?
+region = data[,20]
+data.frame(z1=-pca$x[,1],region=region) %>% 
+  group_by(region) %>% summarise(mean=mean(z1)) %>% arrange(desc(mean))
+# Europe is the region with the better countries to live of the world (overall), 
+# followed by the American continent. According to this, the worst
+# region to live is the Sub-Saharan Africa.
+# I think it broadly coincides with the perception we all have.
+```
+
+
+# Factor analysis
+```{r}
+data.f <- factanal(data_num, factors = 3, rotation="none", scores="regression", lower = 0.01)
+data.f
+cbind(data.f$loadings, data.f$uniquenesses)
+
+# var explained by first three factors is around 66%
+par(mfrow=c(3,1))  # This is to view the three graphs at the same time
+barplot(data.f$loadings[,1], names=F, las=2, col="darkblue", ylim = c(-1, 1))
+barplot(data.f$loadings[,2], names=F, las=2, col="darkblue", ylim = c(-1, 1))
+barplot(data.f$loadings[,3], las=2, col="darkblue", ylim = c(-1, 1))
+```
+
+With two factors it looks as follows
+```{r}
+data.f2 <- factanal(data_num, factors = 2, rotation="varimax", scores="Bartlett", lower = 0.01)
+data.f2
+cbind(data.f2$loadings, data.f2$uniquenesses)  
+
+par(mfrow=c(2,1))
+barplot(data.f2$loadings[,1], names=F, las=2, col="darkblue", ylim = c(-1, 1))
+barplot(data.f2$loadings[,2], las=2, col="darkblue", ylim = c(-1, 1))
+# The first two factors can be interpreted, from my point of view, as follows: 
+# one with more importance to health variables (life expentancy, mortality...),
+# and the second one with more weights to economic variables (PIB per capita, economic freedom...)
+# The third factor is a bit more difficult to decribe.
+
+# Distribution of the score of the countries with each factor:
+factor.df1 = data.frame(Country=data$Country, data.f2$scores) %>% gather("factor", "score", -Country)
+factor.df1 %>%
+  ggplot(aes(x=Country,y=score)) + geom_point(size=1) + 
+  theme_bw() + theme(legend.position="bottom") + scale_color_brewer(palette="Dark2") +
+  facet_wrap(~factor, ncol =1) +
+  labs(title="2-factor model", x="", y="scores", col="") 
+
+```
+
+# CLUSTERING
+```{r}
+# The grpah where we are going to plot the countries is the same
+# that we did before with the two principal components (the axes are the PC)
+data.frame(z1=-pca$x[,1],z2=pca$x[,2]) %>% 
+  ggplot(aes(z1,z2,label=names)) + geom_point(size=0) +
+  labs(title="PCA", x="PC1", y="PC2") +
+  theme_bw() +theme(legend.position="bottom") + 
+  geom_text(size=2, hjust=0.6, vjust=0, check_overlap = TRUE) 
+
+
+# Scale the data:
+X = scale(data_num)
+```
+
+
+How many centers?
+```{r}
+# Based on wss (total within sum of square)
+fviz_nbclust(X, kmeans, method = 'wss')
+# Here, based on the "elbow method" we could guess that the optimum
+# number of centers is 3.
+
+
+# Based on shiloutte 
+fviz_nbclust(X, kmeans, method = 'silhouette')
+# Give us that 2 and 3 are the two best number of centers
+
+# Based on the gap statistic (using bootstrap)
+fviz_nbclust(X, kmeans, method = 'gap_stat', k.max = 20)
+# According to the gap statistic, we should select 3 centers
+```
+After executing the three methods I beleive that the optimum number of centers is 3.
+
+##Kmeans
+```{r}
+fit = kmeans(X, centers=3, nstart=100)
+groups = fit$cluster
+groups
+
+# Are the groups well balanced?
+barplot(table(groups), col="blue")
+# Groups 2 and 3 have a similar dimension, 1 it is the one that is  bigger. But I would say that it is more or less a normal distribution of all our data. It is not that we have a lot of countries in one group and the others are almost empty. In this case, the three groups have  a reasonable number of countries
+
+# Variables for each center:
+centers=fit$centers
+centers
+
+# Who are the countries in the first group? 
+i=1  # plotting the centers in cluster 1
+bar1=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), 
+             main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar1,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# Third-word countries
+
+# Second group
+i=2  # plotting the centers in cluster 2
+bar2=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), 
+             main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar2,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# We could guess that they are Developing countries
+
+
+# Third group
+i=3  # plotting the centers in cluster 3
+bar3=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), 
+             main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar2,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# Countries with less fertility than the mean, higher GDP and Life expectancy... It seems this are richer countries (firs-world countries)
+
+
+# I have notice that when running the code several times, the number of the group changes. I always get the same clusters, but sometimes the richer countries are in group 3 and sometimes in 1. I say this beacuse if the coments does not coincide with the graphs, it is because it has changed the number of the group. Nevertheless, the clusters I get is always the same, so the conclusions are equally valid, the only thing that changes is the number of the group.
+```
+
+**Clusplot**
+```{r}
+fviz_cluster(fit, data = X, geom = c("point"),ellipse.type = 'norm', pointsize=1)+
+  theme_minimal()+geom_text(label=names,hjust=0, vjust=0,size=2,check_overlap = T)+scale_fill_brewer(palette="Paired")
+
+# After watching the plot, we can confirm what we guess with the barcharts.
+# Broadly, group 3 includes first-word countries (high-developed countries)
+# such as Australia, Singapore, Netherlands... In the first group
+# we can find south-american countries (Argentina, Brazil), 
+# the poorer countries in Europe (Montenegro, Bosnia), and some north-african
+# countries (Algeria, Egypt, Cameroon)
+# Finally, in the second group we have the sub-saharian countries mainly
+
+
+```
+
+**Silhouette plot**
+```{r}
+# The silhouette value in [-1,1] measures the similarity (cohesion) of a data point to its cluster relative to other clusters (separation). 
+# Silhouette plots rely on a distance metric and suggest that the data matches its own cluster well.
+# The larger the silhouette widths, the better.
+
+d <- dist(X, method="euclidean")  
+sil = silhouette(groups, d)
+plot(sil, col=1:5, main="", border=NA)
+summary(sil)
+
+# Our average silhouette width is 0.31, which is pretty good. 
+
+```
+
+
+**Profile variables**
+```{r}
+# From the dataset with all of our data let's get some variables that we exclude from the clustering and let's see if  we can draw any other conclusions:
+age = total.data$Population.median.age..years.
+age = age[-which(vec>6)] # remember that in the preprocessing we removed
+# a row which has many missing values. We have to do this again so our 
+# vector has the appropiate length.
+summary(age) # although there are some NAs, the graph automatically is not going to plot the missing values
+
+as.data.frame(X) %>% mutate(cluster=factor(groups), names=names, Age=age) %>%
+  ggplot(aes(x = cluster, y = Age)) + 
+  geom_boxplot(fill="darkblue") +
+  labs(title = "Age by cluster", x = "", y = "", col = "") 
+# Conclusion: The median age is higher the more developed the country is.
+# This is something generally know, in poorer countries the birth rate
+# is higher and life expectancy lower, resulting in lower median ages.
+```
+
+Antoher interesnting graphs
+```{r}
+urban_population = total.data$Urban_population_pct_of_total; urban_population = urban_population[-which(vec>6)]
+total_population = total.data$Population..Millions. ; total_population = total_population[-which(vec>6)]
+
+as.data.frame(X) %>% mutate(cluster=factor(groups), names=names, Population=total_population) %>%
+  ggplot(aes(x = cluster, y = Population)) + 
+  geom_boxplot(fill="darkblue") +  scale_y_continuous(trans='log10')+
+  labs(title = "Minutes played by cluster", x = "", y = "", col = "") 
+# Population is not relevant to determine the quality of life of a country.
+# We may think that bigger economies may have more power or influence to 
+# impose their interest globlally and take advantage, but we have seen
+# that in fact the size of a country/economy is not important. In fact,
+# some countries that have been leading our research are really small (Luxembourg, Switzerland...)
+
+as.data.frame(X) %>% mutate(cluster=factor(groups), names=names, Urban_pop=urban_population) %>%
+  ggplot(aes(x = cluster, y = Urban_pop)) + 
+  geom_boxplot(fill="darkblue") +
+  labs(title = "Minutes played by cluster", x = "", y = "", col = "") 
+# In higher-developped countries people live more in cities, there is more urban population
+```
+
+
+## MAHALANOBIS
+```{r}
+# kmeans with MAHALANOBIS distance
+S_x <- cov(data_num)
+iS <- solve(S_x)
+e <- eigen(iS)
+V <- e$vectors
+B <- V %*% diag(sqrt(e$values)) %*% t(V)
+Xtil <- scale(data_num,scale = FALSE)
+data_num.S <- Xtil %*% B
+
+fit.mahalanobis = kmeans(data_num.S, centers=3, nstart=100)
+groups = fit.mahalanobis$cluster
+centers=fit.mahalanobis$centers
+colnames(centers)=colnames(X)
+centers
+
+i=1  # plotting the centers in cluster 1
+bar1=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar1,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# It stands out that Democracy, which was a variable not very used until now, it is relevant for this factor.
+
+i=2  # plotting the centers in cluster 2
+bar2=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar2,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# A bit high infant mortality, low democracy and economic freedom score.
+
+i=3  # plotting the centers in cluster 3
+bar3=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar3,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# This third group is very strange. Specially beacause inflation it is nota variable that many countries have high.
+
+# Let's check how many countries are there in group 3
+barplot(table(groups), col="blue")
+# There is only 1 country.
+
+# Cluspot
+fviz_cluster(fit.mahalanobis, data = X, geom = c("point"),ellipse.type = 'norm', pointsize=1)+
+  theme_minimal()+geom_text(label=names,hjust=0, vjust=0,size=2,check_overlap = T)+scale_fill_brewer(palette="Paired")
+# The only country in group 3 is Venezuela (which is a country with high inflation as we saw). 
+# We should reduce the number of factors, as we have seen that with three factor we have a group of just one country.
+```
+
+```{r}
+# Mahalanobis with 2 centers:
+S_x <- cov(data_num)
+iS <- solve(S_x)
+e <- eigen(iS)
+V <- e$vectors
+B <- V %*% diag(sqrt(e$values)) %*% t(V)
+Xtil <- scale(data_num,scale = FALSE)
+data_num.S <- Xtil %*% B
+
+fit.mahalanobis = kmeans(data_num.S, centers=2, nstart=100)
+groups = fit.mahalanobis$cluster
+centers=fit.mahalanobis$centers
+colnames(centers)=colnames(X)
+centers
+
+i=1  # plotting the centers in cluster 1
+bar1=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar1,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# Democracy and judical effectiveness are relevant
+
+
+i=2  # plotting the centers in cluster 2
+bar2=barplot(centers[i,], las=2, col="darkblue", ylim=c(-2,2), main=paste("Cluster", i,": Group center in blue, global center in red"))
+points(bar2,y=apply(X, 2, quantile, 0.50),col="red",pch=19)
+# Low decmocracy score
+
+barplot(table(groups), col="blue")
+
+
+# Cluspot
+fviz_cluster(fit.mahalanobis, data = X, geom = c("point"),ellipse.type = 'norm', pointsize=1)+
+  theme_minimal()+geom_text(label=names,hjust=0, vjust=0,size=2,check_overlap = T)+scale_fill_brewer(palette="Paired")
+
+# This classifications also makes sense, countries are divided in 2, the wealthier and with higher living standard, and the poorer.
+
+```
+
+**How similar are the clusters?**
+```{r}
+adjustedRandIndex(fit$cluster, fit.mahalanobis$cluster) 
+# The value close to 1 indicates a high correlation. As we have obtain 0.16,
+# we can see that the clusters change significantly depending on the method we use
+```
+
+## PAM
+```{r}
+# How many groups?
+fviz_nbclust(scale(X), pam, method = 'silhouette', k.max = 10)
+fviz_nbclust(scale(X), pam, method = 'gap_stat', k.max = 10, nboot = 500)
+fviz_nbclust(scale(X), pam, method = 'wss', k.max = 10, nboot = 500)
+# Let's select 3 centers
+
+# Visualization of clusters
+fit.pam <- eclust(X, "pam", stand=TRUE, k=3, graph=F)
+
+fviz_cluster(fit.pam, data = X, geom = c("point"), pointsize=1)+
+  theme_minimal()+geom_text(label=names,hjust=0, vjust=0,size=2,check_overlap = F)+scale_fill_brewer(palette="Paired")
+
+centers2=fit.pam$medoids
+
+barplot(centers2[1,], las=2, col="darkblue", ylim = c(-2,2))
+# High fertility and mortality
+barplot(centers2[2,], las=2, col="darkblue", ylim = c(-2,2))
+barplot(centers2[3,], las=2, col="darkblue", ylim = c(-2,2))
+# High GDP, freedom, Life expectancy (this is the group of the best countries)
+
+
+adjustedRandIndex(fit$cluster, fit.pam$clustering) 
+# Very similar the kmeans and the pam in this case.
+```
+
+```{r}
+map = data.frame(country=names, value=as.factor(fit.pam$clustering))
+#map = data.frame(country=names, value=fit.kmeans$cluster)
+
+#Convert the country code into iso3c using the function countrycode()
+map$country = countrycode(map$country, 'country.name', 'iso3c')
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",nameJoinColumn = "country")
+#Draw the map
+mapCountryData(matched,nameColumnToPlot="value",missingCountryCol = "white",borderCol = "#C7D9FF",catMethod = "pretty", colourPalette = "rainbow", mapTitle = c("Clusters"), lwd=1)
+
+# Now we can see which country belong to each group but in the map, that is more visual.
+
+```
+
+
+
+**KERNEL KMEANS**
+```{r}
+
+fit.ker <- kkmeans(as.matrix(X), centers=3, kernel="rbfdot") # Radial Basis kernel (Gaussian)
+# By default, Gaussian kernel is used
+# By default, sigma parameter is estimated
+
+centers(fit.ker)
+size(fit.ker)
+withinss(fit.ker)
+
+object.ker = list(data = X, cluster = fit.ker@.Data)
+fviz_cluster(object.ker, geom = c("point"), ellipse=F,pointsize=2)+
+  theme_minimal()+geom_text(label=names,hjust=0, vjust=0,size=3,check_overlap = T)+scale_fill_brewer(palette="Paired")
+# We get similar clusters to the ones that we have obtained with previous methods.
+
+```
+
+
+**HIERARCHICAL CLUSTERING**
+```{r}
+?dist #stats
+?hclust
+d = dist(scale(X), method='euclidean')
+hc <- hclust(d, method = 'ward.D2') # Ward's minimum variance method
+
+# Visualization with a dendrogram
+# Classical dendrogram:
+hc$labels <- names
+
+fviz_dend(x = hc, 
+          k=3,
+          palette = "jco", 
+          rect = TRUE, rect_fill = TRUE, 
+          rect_border = "jco"          
+)
+
+# Difficult to visualize the countries
+# Let's use a phylogenic tree:
+fviz_dend(x = hc,
+          k = 3,
+          color_labels_by_k = TRUE,
+          cex = 0.8,
+          type = "phylogenic",
+          repel = TRUE)+  labs(title="Socio-economic-health tree clustering of the world") + theme(axis.text.x=element_blank(),axis.text.y=element_blank())
+# Much better to vusalize it
+
+```
+
+In a map
+```{r}
+
+groups.hc = cutree(hc, k = 3)
+
+# Map our PCA index in a map:
+map = data.frame(country=names, value=as.factor(groups.hc))
+#Convert the country code into iso3c using the function countrycode()
+map$country = countrycode(map$country, 'country.name', 'iso3c')
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country")
+#Draw the map
+mapCountryData(matched,nameColumnToPlot="value",missingCountryCol = "white",
+               borderCol = "#C7D9FF",
+               catMethod = "pretty", colourPalette = "rainbow",
+               mapTitle = c("Clusters"), lwd=1)
+# Very similar to the one we obtained before,although there are slight 
+# differences (Uruguay, for instance, is now in the group of high-developed countries)
+
+```
+
+
+**EM CLUSTERING**
+```{r}
+res.Mclust <- Mclust(X)  # X is already scale
+summary(res.Mclust)
+# The clustering is probabilistic: for each country we don't have a unique group but the probabilities the country belongs to each of the groups
+
+head(res.Mclust$z)
+# probabilidad de cada país de estar en cada cluster
+
+# Of course the tool assign the group with highest probability  
+head(res.Mclust$classification)
+# te asigna a cada cluster en función a la probabilidad
+
+fviz_mclust(object = res.Mclust, what = "BIC", pallete = "jco")
+# 4 groups is what by the graph we can see it is ok
+
+```
+
+
+
+Clusplot 
+```{r}
+fviz_mclust(object = res.Mclust, what = "classification", geom = "point", pallete = "jco")
+
+
+# How similar are the clusters?
+# Remember: The closer to 1 the more agreement
+adjustedRandIndex(res.Mclust$classification, fit.pam$clustering) 
+adjustedRandIndex(res.Mclust$classification, groups.hc) 
+# Between 0.5 and 0.6 in both cases, well we can cocnlcude that
+# they are somehow related.
+
+# Visualization in the map  
+groups.mclust = res.Mclust$classification
+
+# Map our PCA index in a map:
+map = data.frame(country=names, value=groups.mclust)
+#Convert the country code into iso3c using the function countrycode()
+map$country = countrycode(map$country, 'country.name', 'iso3c')
+#Create data object supporting the map
+matched <- joinCountryData2Map(map, joinCode = "ISO3",
+                               nameJoinColumn = "country")
+#Draw the map
+mapCountryData(matched,nameColumnToPlot="value",missingCountryCol = "white",
+               borderCol = "#C7D9FF",
+               catMethod = "pretty", colourPalette = "topo",
+               mapTitle = c("Clusters"), lwd=1)
+
+# Now we have more groups, but we can observe that in all the clusters we have made, broadly, North America, Europe, Australia, Japan are together and are selected as the best countries to live.
+
+```
+
+**Heatmaps**
+```{r}
+# A heat map is a false color image (based on data frame X) with a 
+# dendrogram added to the left side and to the top
+heatmap(scale(X), scale = "none",
+        distfun = function(x){dist(x, method = "euclidean")},
+        hclustfun = function(x){hclust(x, method = "ward.D2")},
+        cexRow = 0.7)
+
+# The darker the color, the higher the correlation
+# The higher on the dendogram, the more important. 
+# For instance, obervation 89 is highly explained by CO2.
+# Also, the observation 8 (Austria) is mainly explained by the 
+# 'more important' variables (the ones that explained a bigger part)
+# of our dataset (cell phones, life expectancy, economic freedom, internet users...)
+
+```
+
+
+# SOURCES
+All of my code is inspired in what we have seen in class. That is the main reference I have used.
+Apart froma that, I found some interesting ways to do the graphs in:
+https://r-graph-gallery.com/ggplot2-package.html
+Also, to solve the doubts that I have while making the code I usually look for the answer in https://stackoverflow.com/ and in https://rpubs.com/ 
+
